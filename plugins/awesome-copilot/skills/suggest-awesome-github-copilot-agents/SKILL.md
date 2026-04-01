@@ -3,104 +3,217 @@ name: suggest-awesome-github-copilot-agents
 description: 'Suggest relevant GitHub Copilot Custom Agents files from the awesome-copilot repository based on current repository context and chat history, avoiding duplicates with existing custom agents in this repository, and identifying outdated agents that need updates.'
 ---
 
-# Suggest Awesome GitHub Copilot Custom Agents
+description: Analyze the current repository and suggest relevant GitHub Copilot Custom Agents from the awesome-copilot repository. Compares local agents against remote versions, identifies gaps, detects outdated files, and presents a structured recommendation table.
+tools:
 
-Analyze current repository context and suggest relevant Custom Agents files from the [GitHub awesome-copilot repository](https://github.com/github/awesome-copilot/blob/main/docs/README.agents.md) that are not already available in this repository. Custom Agent files are located in the [agents](https://github.com/github/awesome-copilot/tree/main/agents) folder of the awesome-copilot repository.
+fetch
 
-## Process
+githubRepo
 
-1. **Fetch Available Custom Agents**: Extract Custom Agents list and descriptions from [awesome-copilot README.agents.md](https://github.com/github/awesome-copilot/blob/main/docs/README.agents.md). Must use `fetch` tool.
-2. **Scan Local Custom Agents**: Discover existing custom agent files in `.github/agents/` folder
-3. **Extract Descriptions**: Read front matter from local custom agent files to get descriptions
-4. **Fetch Remote Versions**: For each local agent, fetch the corresponding version from awesome-copilot repository using raw GitHub URLs (e.g., `https://raw.githubusercontent.com/github/awesome-copilot/main/agents/<filename>`)
-5. **Compare Versions**: Compare local agent content with remote versions to identify:
-   - Agents that are up-to-date (exact match)
-   - Agents that are outdated (content differs)
-   - Key differences in outdated agents (tools, description, content)
-6. **Analyze Context**: Review chat history, repository files, and current project needs
-7. **Match Relevance**: Compare available custom agents against identified patterns and requirements
-8. **Present Options**: Display relevant custom agents with descriptions, rationale, and availability status including outdated agents
-9. **Validate**: Ensure suggested agents would add value not already covered by existing agents
-10. **Output**: Provide structured table with suggestions, descriptions, and links to both awesome-copilot custom agents and similar local custom agents
-    **AWAIT** user request to proceed with installation or updates of specific custom agents. DO NOT INSTALL OR UPDATE UNLESS DIRECTED TO DO SO.
-11. **Download/Update Assets**: For requested agents, automatically:
-    - Download new agents to `.github/agents/` folder
-    - Update outdated agents by replacing with latest version from awesome-copilot
-    - Do NOT adjust content of the files
-    - Use `#fetch` tool to download assets, but may use `curl` using `#runInTerminal` tool to ensure all content is retrieved
-    - Use `#todos` tool to track progress
+runInTerminal
 
-## Context Analysis Criteria
+todos
 
-🔍 **Repository Patterns**:
+readFile
 
-- Programming languages used (.cs, .js, .py, etc.)
-- Framework indicators (ASP.NET, React, Azure, etc.)
-- Project types (web apps, APIs, libraries, tools)
-- Documentation needs (README, specs, ADRs)
+listDirectory
+applyTo: "**/.github/agents/*.agent.md"
 
-🗨️ **Chat History Context**:
+Suggest Awesome GitHub Copilot Custom Agents
+Analyze current repository context and suggest relevant Custom Agents from
+github/awesome-copilot
+that are absent or outdated in this repository.
 
-- Recent discussions and pain points
-- Feature requests or implementation needs
-- Code review patterns
-- Development workflow requirements
+Tool Routing
+Use the correct tool per step — do not substitute:
 
-## Output Format
+Step	Tool	Reason
+Fetch README.agents.md	fetch	Raw HTTP — no GitHub auth needed
+Fetch remote agent file	fetch (raw URL)	Retrieve exact file bytes for diff
+List local agent files	listDirectory + readFile	Read local .github/agents/
+Download/update agent	runInTerminal with curl -fsSL	Ensures full content, handles redirects
+Track install progress	todos	Ordered checklist for multi-file installs
+Browse repo file tree	githubRepo	Only when directory listing is needed
+Execution Pipeline
+Run steps in the order below. Steps 2–5 may be parallelised.
 
-Display analysis results in structured table comparing awesome-copilot custom agents with existing repository custom agents:
+STEP 1 — Fetch Upstream Catalogue
+Fetch the upstream agent list using the fetch tool:
 
-| Awesome-Copilot Custom Agent                                                                                                                            | Description                                                                                                                                                                | Already Installed | Similar Local Custom Agent         | Suggestion Rationale                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------- | ------------------------------------------------------------- |
-| [amplitude-experiment-implementation.agent.md](https://github.com/github/awesome-copilot/blob/main/agents/amplitude-experiment-implementation.agent.md) | This custom agent uses Amplitude's MCP tools to deploy new experiments inside of Amplitude, enabling seamless variant testing capabilities and rollout of product features | ❌ No             | None                               | Would enhance experimentation capabilities within the product |
-| [launchdarkly-flag-cleanup.agent.md](https://github.com/github/awesome-copilot/blob/main/agents/launchdarkly-flag-cleanup.agent.md)                     | Feature flag cleanup agent for LaunchDarkly                                                                                                                                | ✅ Yes            | launchdarkly-flag-cleanup.agent.md | Already covered by existing LaunchDarkly custom agents        |
-| [principal-software-engineer.agent.md](https://github.com/github/awesome-copilot/blob/main/agents/principal-software-engineer.agent.md)                 | Provide principal-level software engineering guidance with focus on engineering excellence, technical leadership, and pragmatic implementation.                            | ⚠️ Outdated       | principal-software-engineer.agent.md | Tools configuration differs: remote uses `'web/fetch'` vs local `'fetch'` - Update recommended |
+text
+URL: https://raw.githubusercontent.com/github/awesome-copilot/main/docs/README.agents.md
+Parse every Markdown table row into a structured record:
 
-## Local Agent Discovery Process
+text
+{
+  title:       string          // display name from table column 1
+  filename:    string          // kebab-case + ".agent.md" (derive if not explicit)
+  description: string          // table column 2
+  mcp_servers: string[]        // table column 3, split on comma; [] if empty
+  remote_url:  string          // https://github.com/github/awesome-copilot/blob/main/agents/<filename>
+  raw_url:     string          // https://raw.githubusercontent.com/github/awesome-copilot/main/agents/<filename>
+}
+Error handling: If the fetch returns non-200, retry once. On second failure,
+output: ⚠️ Could not reach awesome-copilot — results may be incomplete. and
+continue with an empty upstream catalogue so local-only analysis still runs.
 
-1. List all `*.agent.md` files in `.github/agents/` directory
-2. For each discovered file, read front matter to extract `description`
-3. Build comprehensive inventory of existing agents
-4. Use this inventory to avoid suggesting duplicates
+STEP 2 — Inventory Local Agents
+List all files matching .github/agents/*.agent.md.
 
-## Version Comparison Process
+For each file, parse the YAML front matter block (between --- delimiters).
 
-1. For each local agent file, construct the raw GitHub URL to fetch the remote version:
-   - Pattern: `https://raw.githubusercontent.com/github/awesome-copilot/main/agents/<filename>`
-2. Fetch the remote version using the `fetch` tool
-3. Compare entire file content (including front matter, tools array, and body)
-4. Identify specific differences:
-   - **Front matter changes** (description, tools)
-   - **Tools array modifications** (added, removed, or renamed tools)
-   - **Content updates** (instructions, examples, guidelines)
-5. Document key differences for outdated agents
-6. Calculate similarity to determine if update is needed
+Extract the following fields (record null if absent):
 
-## Requirements
+text
+# Fields that matter for comparison
+description: <string>
+tools:        <string[]>
+mode:         <string>
+applyTo:      <string>
+Build a map keyed by normalised filename (lowercase, hyphens, .agent.md suffix).
 
-- Use `githubRepo` tool to get content from awesome-copilot repository agents folder
-- Scan local file system for existing agents in `.github/agents/` directory
-- Read YAML front matter from local agent files to extract descriptions
-- Compare local agents with remote versions to detect outdated agents
-- Compare against existing agents in this repository to avoid duplicates
-- Focus on gaps in current agent library coverage
-- Validate that suggested agents align with repository's purpose and standards
-- Provide clear rationale for each suggestion
-- Include links to both awesome-copilot agents and similar local agents
-- Clearly identify outdated agents with specific differences noted
-- Don't provide any additional information or context beyond the table and the analysis
+If .github/agents/ does not exist, record zero local agents and skip Steps 3–5.
 
-## Icons Reference
+STEP 3 — Fetch Remote Counterparts
+For every filename in the local inventory, construct its raw_url and fetch it
+with the fetch tool. Collect the raw content for each.
 
-- ✅ Already installed and up-to-date
-- ⚠️ Installed but outdated (update available)
-- ❌ Not installed in repo
+404 → mark as local-only (not from awesome-copilot; skip version comparison).
+Network error → mark as UNKNOWN (cannot determine status; flag in output table).
 
-## Update Handling
+STEP 4 — Compute Version Status
+Compare each local file against its remote counterpart using this decision tree:
 
-When outdated agents are identified:
-1. Include them in the output table with ⚠️ status
-2. Document specific differences in the "Suggestion Rationale" column
-3. Provide recommendation to update with key changes noted
-4. When user requests update, replace entire local file with remote version
-5. Preserve file location in `.github/agents/` directory
+text
+local file exists?
+├─ NO  → status = ❌ NOT INSTALLED
+└─ YES → fetch remote
+         ├─ remote NOT FOUND (404)  → status = ✅ LOCAL ONLY (custom, not from upstream)
+         ├─ fetch ERROR             → status = ❓ UNKNOWN
+         └─ remote FOUND
+              ├─ byte-for-byte identical → status = ✅ UP-TO-DATE
+              └─ content differs
+                   ├─ diff front matter fields (description, tools, mode, applyTo)
+                   ├─ diff body content (instructions, examples)
+                   └─ status = ⚠️ OUTDATED
+                      record specific_diffs[] listing each changed field/section
+specific_diffs format:
+
+text
+- tools: added ['web/fetch'], removed ['fetch']
+- description: wording changed (first 80 chars of each shown)
+- body: ~12% content change (section "Usage Examples" modified)
+STEP 5 — Score Relevance for Uninstalled Agents
+For each upstream agent not present locally, compute a relevance score (0–10)
+based on repository signals detected in STEP 6.
+
+Signal	Score bonus
+Language match (.cs → .NET agents, .py → Python agents, etc.)	+3
+Framework file present (angular.json, next.config.*, etc.)	+3
+Cloud provider config detected (azure*, terraform*, etc.)	+2
+Agent fills an explicit gap in local library (no test agents, no docs agents)	+2
+Agent requires MCP server not yet configured in repo	−1
+Agent is a novelty/persona with no clear repo alignment	−2
+Only include agents with score ≥ 3 in the output table. Suppress lower-scored agents.
+
+STEP 6 — Analyse Repository Context
+Collect the following signals before scoring (used in STEP 5):
+
+File-system signals:
+
+Languages: scan extensions (.cs, .py, .js, .ts, .go, .rs, .java, etc.)
+
+Frameworks: package.json → dependencies, *.csproj, go.mod, Cargo.toml, pom.xml
+
+Cloud: azure*, terraform*, bicep*, *.tf, *.bicep, k8s/, helm/
+
+CI/CD: .github/workflows/, Jenkinsfile, .gitlab-ci.yml
+
+Testing: *test*, *spec*, jest.config.*, pytest.ini, xunit*
+
+Docs: docs/, ADR/, *.md count > 10
+
+Chat history signals:
+
+Extract technology names, pain points, or workflow keywords from recent turns.
+
+Boost score for any upstream agent that directly addresses a mentioned topic.
+
+STEP 7 — Build Output Table
+Output exactly one Markdown table. No prose before or after the table except
+the two-line summary block defined below.
+
+Summary block (above table):
+text
+📦 Local agents found: <N>  |  ✅ Up-to-date: <N>  |  ⚠️ Outdated: <N>  |  ❌ Not installed (shown): <N>
+🔍 Repository signals: <comma-separated list of detected languages/frameworks>
+Table schema:
+Column	Content
+Awesome-Copilot Agent	Linked filename → https://github.com/github/awesome-copilot/blob/main/agents/<filename>
+Description	description field from remote front matter (truncated to 120 chars)
+Status	✅ Up-to-date · ⚠️ Outdated · ❌ Not installed · ❓ Unknown · 🔒 Local Only
+Local File	Filename if installed, else —
+Relevance / Diff Notes	For ❌: one-sentence rationale (score ≥ 3 required). For ⚠️: list specific_diffs. For ✅: —
+Row ordering:
+⚠️ Outdated (update recommended — highest priority)
+
+❌ Not installed, sorted by relevance score descending
+
+✅ Up-to-date (collapsed at bottom, no rationale needed)
+
+🔒 Local Only (custom, not from upstream)
+
+STEP 8 — Await User Instruction
+STOP HERE. Do not download, modify, or create any files.
+
+End with exactly this prompt:
+
+Reply with the agent filenames you want to install or update, and I will
+download them to .github/agents/ without modifying content.
+
+STEP 9 — Install / Update (Only When Directed)
+Trigger only when the user explicitly names one or more agents to install or update.
+
+For each requested agent:
+
+Add a todos entry: [ ] Install <filename>
+
+Construct the raw URL:
+https://raw.githubusercontent.com/github/awesome-copilot/main/agents/<filename>
+
+Run in terminal:
+
+bash
+mkdir -p .github/agents
+curl -fsSL "<raw_url>" -o ".github/agents/<filename>"
+Verify file exists and is non-empty (wc -c).
+
+Mark todos entry complete: [x] Install <filename>
+
+Report result inline: ✅ <filename> saved to .github/agents/
+
+NEVER modify file content. Write bytes exactly as received.
+NEVER install agents not explicitly requested.
+If curl returns non-zero exit code, report the error and leave the file untouched.
+
+Guard Rails
+DO NOT install or overwrite any file before STEP 9 is explicitly triggered.
+
+DO NOT hallucinate filenames — only reference agents confirmed in the upstream catalogue.
+
+DO NOT include agents with relevance score < 3 in the output table.
+
+DO NOT merge or edit file content during install — raw bytes only.
+
+DO NOT run terminal commands in STEP 9 unless curl is available (which curl).
+If unavailable, fall back to fetch tool and write via writeFile.
+
+DO NOT output anything beyond the summary block and the table until STEP 8 is complete.
+
+Status Icon Reference
+Icon	Meaning
+✅	Installed and byte-identical to upstream
+⚠️	Installed but content differs from upstream — update available
+❌	Not installed — recommended based on relevance score
+❓	Status unknown — fetch failed; manual check needed
+🔒	Local custom agent — not present in awesome-copilot upstream
